@@ -28,85 +28,27 @@ app.set('view engine', 'html');
 
 const {
   SERVER_PRIVATE_KEY_FILE,
-  GOOGLE_SERVICE_ACCOUNT_CREDENTIAL_FILE,
-  GOOGLE_REFRESH_TOKEN_FILE,
-  GOOGLE_CLIENT_SECRET_FILE,
-  GOOGLE_ID_TOKEN_FILE,
-  LOGGED_IN_USER_SUB,
-  LOGGED_IN_USER_EMAIL,
-  LOGGED_IN_USER_NAME,
   ISSUER,
 } = process.env;
 
 let {
   SERVER_PRIVATE_KEY,
-  GOOGLE_SERVICE_ACCOUNT_CREDENTIAL,
-  GOOGLE_ID_TOKEN,
-  GOOGLE_REFRESH_TOKEN,
-  GOOGLE_CLIENT_SECRET,
 } = process.env;
 
 if (SERVER_PRIVATE_KEY_FILE) {
   SERVER_PRIVATE_KEY = fs.readFileSync(SERVER_PRIVATE_KEY_FILE, 'ascii');
 }
-if (GOOGLE_SERVICE_ACCOUNT_CREDENTIAL_FILE) {
-  GOOGLE_SERVICE_ACCOUNT_CREDENTIAL = fs.readFileSync(GOOGLE_SERVICE_ACCOUNT_CREDENTIAL_FILE, 'ascii');
-}
-if (GOOGLE_ID_TOKEN_FILE) {
-  GOOGLE_ID_TOKEN = fs.readFileSync(GOOGLE_ID_TOKEN_FILE, 'ascii').trim();
-}
-if (GOOGLE_REFRESH_TOKEN_FILE) {
-  GOOGLE_REFRESH_TOKEN = fs.readFileSync(GOOGLE_REFRESH_TOKEN_FILE, 'ascii').trim();
-}
-if (GOOGLE_CLIENT_SECRET_FILE) {
-  GOOGLE_CLIENT_SECRET = fs.readFileSync(GOOGLE_CLIENT_SECRET_FILE, 'ascii').trim();
-}
-
 if (!SERVER_PRIVATE_KEY) {
   SERVER_PRIVATE_KEY = new NodeRSA().generateKeyPair().exportKey('pkcs1-private-pem');
 }
 const SERVER_JWK = pem2jwk(SERVER_PRIVATE_KEY);
 const SERVER_JWK_KEY_ID = '0';
 
-const DEFAULT_SUBJECT = 'default_subject';
-
 const LISTEN_PORT = Number(process.env.LISTEN_PORT || 80);
 const LISTEN_ADDRESS = process.env.LISTEN_ADDRESS || '127.0.0.1';
 
-const GOOGLE_SERVICE_ACCOUNT = GOOGLE_SERVICE_ACCOUNT_CREDENTIAL
-  && JSON.parse(GOOGLE_SERVICE_ACCOUNT_CREDENTIAL);
-
-if (!((GOOGLE_ID_TOKEN && GOOGLE_REFRESH_TOKEN && GOOGLE_CLIENT_SECRET)
-  || (!GOOGLE_ID_TOKEN && !GOOGLE_REFRESH_TOKEN && !GOOGLE_CLIENT_SECRET))) {
-  console.log('GOOGLE_ID_TOKEN, GOOGLE_REFRESH_TOKEN, and GOOGLE_CLIENT_SECRET must either all be defined or none must be defined');
-  process.exit(1);
-}
-
-if (GOOGLE_SERVICE_ACCOUNT_CREDENTIAL && GOOGLE_ID_TOKEN) {
-  console.log('Either use a GOOGLE_SERVICE_ACCOUNT_CREDENTIAL or a refresh token combination');
-  process.exit(1);
-}
-
-let GOOGLE_ID_TOKEN_CLAIMS;
-
-if (GOOGLE_ID_TOKEN) {
-  const {
-  // eslint-disable-next-line camelcase
-    iss, azp, at_hash, iat, exp, ...userClaims
-  } = jwt.decode(GOOGLE_ID_TOKEN);
-
-  GOOGLE_ID_TOKEN_CLAIMS = { ...userClaims };
-}
-
 const REFRESH_TOKEN = crypto.createHash('sha256').update([
-  'LOGGED_IN_USER_SUB',
-  'LOGGED_IN_USER_NAME',
-  'LOGGED_IN_USER_EMAIL',
-  'GOOGLE_SERVICE_ACCOUNT_CREDENTIAL',
   'SERVER_PRIVATE_KEY',
-  'GOOGLE_ID_TOKEN',
-  'GOOGLE_REFRESH_TOKEN',
-  'GOOGLE_CLIENT_SECRET',
   'LISTEN_PORT',
 ].join()).digest('base64');
 
@@ -119,15 +61,6 @@ function runAsyncWrapper(callback) {
 }
 
 async function fetchAccessToken() {
-  if (GOOGLE_SERVICE_ACCOUNT) {
-    return getServiceAccountAccessToken();
-  }
-
-  if (GOOGLE_ID_TOKEN_CLAIMS) {
-    return getRefreshAccessToken();
-  }
-
-  return getStaticAccessToken();
 }
 
 app.get('/.well-known/openid-configuration', (req, res) => {
@@ -154,7 +87,7 @@ app.get('/.well-known/openid-configuration', (req, res) => {
       'openid',
       'email',
       'profile',
-      'offline_access',
+      'boat_key_access'
     ],
     claims_supported: [
       'aud',
@@ -167,7 +100,6 @@ app.get('/.well-known/openid-configuration', (req, res) => {
     ],
     grant_types_supported: [
       'authorization_code',
-      'refresh_token',
     ],
   };
 

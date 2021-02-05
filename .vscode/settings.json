@@ -16,6 +16,8 @@
         "dcmjs",
         "deadend",
         "etag",
+        "jboss",
+        "keycloak",
         "nocache",
         "oidcredirect"
     ]

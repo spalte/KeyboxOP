@@ -23,6 +23,17 @@
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}/OP/server.js"
+        },
+        {
+            "type": "pwa-node",
+            "request": "launch",
+            "env": {
+            },
+            "name": "Launch QR Login",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/qr_login/server.js"
         }
     ]
 }

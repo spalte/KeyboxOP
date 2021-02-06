@@ -4,15 +4,19 @@ const app = express();
 const nocache = require('nocache');
 const mustacheExpress = require('mustache-express');
 const cookieParser = require("cookie-parser");
-const AES = require("crypto-js/aes");
-
-const AES_KEY = "bQeShVmYq3t6w9z$C&F)J@NcRfUjWnZr";
+const cookieEncrypter = require('cookie-encrypter')
 
 const { Issuer, generators } = require('openid-client');
+
+const SECRET_KEY = 'bQeShVmYq3t6w9z$C&F)J@NcRfUjWnZr';
+
 
 const static = express.static(path.join(__dirname, 'public'));
 app.use(static);
 app.use(nocache());
+app.use(cookieParser(SECRET_KEY));
+app.use(cookieEncrypter(SECRET_KEY));
+
 app.use(cookieParser());
 
 app.set('views', './views');
@@ -28,13 +32,11 @@ function runAsyncWrapper(callback) {
         .catch(next);
     };
   }
-  
 
 app.get('/login', (req, res) => {
     const modulus = req.query.modulus;
 
     const code_verifier = generators.codeVerifier();
-
     const code_challenge = generators.codeChallenge(code_verifier);
 
     const redirectUri = client.authorizationUrl({
@@ -43,8 +45,9 @@ app.get('/login', (req, res) => {
         code_challenge,
         code_challenge_method: 'S256',
     });
-​
-    res.cookie('code_verifier', AES.encrypt(code_verifier, AES_KEY), {
+
+    res.cookie('code_verifier', code_verifier, {
+        signed: true,
         maxAge: 5000,
         httpOnly: true,
     });
@@ -55,7 +58,7 @@ app.get('/login', (req, res) => {
 app.get('/cb', runAsyncWrapper(async (req, res) => {
     const params = client.callbackParams(req);
 
-    const code_verifier = AES.decrypt(req.cookies.code_verifier, AES_KEY);
+    const code_verifier = req.signedCookies.code_verifier;
 
     const tokenSet = await client.callback('http://127.0.0.1:8078/cb', params, { code_verifier });
     console.log('received and validated tokens %j', tokenSet);

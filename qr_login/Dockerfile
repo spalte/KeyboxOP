@@ -1,4 +1,4 @@
-FROM node:lts-alpine
+FROM node:14-alpine
 ENV NODE_ENV=production
 ENV LISTEN_ADDRESS=0.0.0.0
 

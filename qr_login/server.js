@@ -94,7 +94,7 @@ app.get('/cb', runAsyncWrapper(async (req, res) => {
     const modulus = params.state;
     const code_verifier = req.signedCookies.code_verifier;
 
-    const tokenSet = await client.callback('http://127.0.0.1:8078/cb', params, { 
+    const tokenSet = await client.callback('https://ycc-qr-login.naturalimage.ch/cb', params, { 
         code_verifier,
         state: modulus,
         response_type: 'code',

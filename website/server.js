@@ -15,7 +15,7 @@ app.get("/vanillajs.png", function(req, res){
     res.sendFile(path.join(__dirname, 'vanillajs.png'));
 });
 
-app.listen(80, () => {
+app.listen(8080, () => {
     console.log('OIDC Redirect listening');
 });
   

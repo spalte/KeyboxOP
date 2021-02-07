@@ -8,6 +8,6 @@ WORKDIR /app
 COPY ["package.json", "package-lock.json*", "./"]
 RUN npm install --production
 
-COPY ["server.js", "public/", "./"]
+COPY ["server.js", "oidc-client.min.js", "vanillajs.png", "public/", "./"]
 
 CMD [ "node", "server.js" ]

@@ -8,14 +8,14 @@ app.use(static);
 app.use(nocache());
 
 app.get("/oidc-client.js", function(req, res){
-    res.sendFile(path.join(__dirname, '../oidc-client.min.js'));
+    res.sendFile(path.join(__dirname, 'oidc-client.min.js'));
 });
 
 app.get("/vanillajs.png", function(req, res){
-    res.sendFile(path.join(__dirname, '../vanillajs.png'));
+    res.sendFile(path.join(__dirname, 'vanillajs.png'));
 });
 
-app.listen(8076, '127.0.0.1', () => {
-    console.log('OIDC Redirect listening at http://127.0.0.1:8076');
+app.listen(80, () => {
+    console.log('OIDC Redirect listening');
 });
   

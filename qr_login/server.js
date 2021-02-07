@@ -213,18 +213,18 @@ refreshCache.on( "del", function( modulus, refreshToken ){
 });
 
 (async function configureOIDC() {
-    const authority = await Issuer.discover('http://127.0.0.1:8075/auth/realms/YCC');
+    const authority = await Issuer.discover('https://ycc-login.naturalimage.ch/auth/realms/ycc');
     console.log('Discovered authority %s %O', authority.issuer, authority.metadata);
 
     client = new authority.Client({
       client_id: 'qr_login',
-      client_secret: '9f43f185-8965-402f-b7b8-130bb04d616b',
-      redirect_uris: ['http://127.0.0.1:8078/cb'],
+      client_secret: 'a865e121-895b-49d2-9ea1-bbd61c838367',
+      redirect_uris: ['https://ycc-qr-login.naturalimage.ch/cb'],
       response_types: ['code'],
     });
     
     //start our server
-    server.listen(8078, '127.0.0.1', () => {
+    server.listen(8080, '0.0.0.0', () => {
         console.log(`Server started on port ${server.address().port} :)`);
     });
 })();

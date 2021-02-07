@@ -1,0 +1,9 @@
+version: "3.2"
+services:
+  oidc-redirect:
+    build: .
+    user: "node"
+    container_name: qr-login
+    ports:
+      - "127.0.0.1:8083:8080"
+#    environment:

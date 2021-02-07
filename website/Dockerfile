@@ -9,5 +9,6 @@ COPY ["package.json", "package-lock.json*", "./"]
 RUN npm install --production
 
 COPY ["server.js", "oidc-client.min.js", "vanillajs.png", "public/", "./"]
+COPY ["public/", "./public/"]
 
 CMD [ "node", "server.js" ]

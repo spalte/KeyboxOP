@@ -179,7 +179,16 @@ server.on('upgrade', function (request, socket, head) {
     }
 });
 
+function noop() {}
+
+function heartbeat() {
+  this.isAlive = true;
+}
+
 wss.on('connection', (ws) => {
+    ws.isAlive = true;
+    ws.on('pong', heartbeat);
+  
     ws.on('message', (message) => {
         if (message.toString().startsWith('modulus=')) {
             if (ws.modulus) {
@@ -193,6 +202,21 @@ wss.on('connection', (ws) => {
         }
     });
 });
+
+const interval = setInterval(function ping() {
+    wss.clients.forEach(function each(ws) {
+        if (ws.isAlive === false) {
+            return ws.terminate();
+        }
+    
+        ws.isAlive = false;
+        ws.ping(noop);
+    });
+}, 30000);
+  
+wss.on('close', function close() {
+    clearInterval(interval);
+});  
 
 async function sendRefresh(modulus) {
     const refreshToken = refreshCache.get(modulus);

@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const crypto = require('crypto');
 const app = express();
 const nocache = require('nocache');
 const mustacheExpress = require('mustache-express');
@@ -12,18 +13,48 @@ const NodeCache = require("node-cache");
 const jwk2pem = require('pem-jwk').jwk2pem
 const NodeRSA = require('node-rsa');
 const sleep = require('sleep-promise');
-
 const { Issuer, generators } = require('openid-client');
+const { exit } = require('process');
 
-const SECRET_KEY = 'bQeShVmYq3t6w9z$C&F)J@NcRfUjWnZr';
+const refreshCache = new NodeCache({ stdTTL: 60 * 60 * 2 });
 
-var refreshCache = new NodeCache({ stdTTL: 60 * 60 * 2 });
+const {
+    FRONTEND_URL,
+    OIDC_AUTHORITY,
+    OIDC_CLIENT_ID,
+    OIDC_CLIENT_SECRET,
+    KEYBOX_OP_NAME,
+    KEYBOX_OP_PASSWORD,
+} = process.env;
+
+if (!FRONTEND_URL) {
+    console.log('Missing FRONTEND_URL');
+    exit(1);
+}
+
+if (!OIDC_AUTHORITY) {
+    console.log('Missing OIDC_AUTHORITY');
+    exit(1);
+}
+
+let {
+    PORT,
+    LISTEN_ADDRESS,
+    COOKIE_SECRET_KEY,
+} = process.env;
+
+PORT = PORT || 8080;
+LISTEN_ADDRESS = LISTEN_ADDRESS || '0.0.0.0';
+
+if (!COOKIE_SECRET_KEY) {
+    COOKIE_SECRET_KEY = crypto.randomBytes(16).toString('hex');
+}
 
 const static = express.static(path.join(__dirname, 'public'));
 app.use(static);
 app.use(nocache());
-app.use(cookieParser(SECRET_KEY));
-app.use(cookieEncrypter(SECRET_KEY));
+app.use(cookieParser(COOKIE_SECRET_KEY));
+app.use(cookieEncrypter(COOKIE_SECRET_KEY));
 
 app.use(cookieParser());
 
@@ -94,7 +125,7 @@ app.get('/cb', runAsyncWrapper(async (req, res) => {
     const modulus = params.state;
     const code_verifier = req.signedCookies.code_verifier;
 
-    const tokenSet = await client.callback('https://ycc-qr-login.naturalimage.ch/cb', params, { 
+    const tokenSet = await client.callback(`${FRONTEND_URL}/cb`, params, {
         code_verifier,
         state: modulus,
         response_type: 'code',
@@ -138,7 +169,7 @@ server.on('upgrade', function (request, socket, head) {
     console.log('Parsing session from request...');
   
     const credentials = auth(request);
-    if (credentials && credentials.name === "keybox_op" && credentials.pass === "pass") {
+    if (credentials && credentials.name === KEYBOX_OP_NAME && credentials.pass === KEYBOX_OP_PASSWORD) {
         wss.handleUpgrade(request, socket, head, function (ws) {
             wss.emit('connection', ws, request);
         });
@@ -213,19 +244,19 @@ refreshCache.on( "del", function( modulus, refreshToken ){
 });
 
 (async function configureOIDC() {
-    const authority = await Issuer.discover('https://ycc-login.naturalimage.ch/auth/realms/ycc');
+    const authority = await Issuer.discover(OIDC_AUTHORITY);
     console.log('Discovered authority %s %O', authority.issuer, authority.metadata);
 
     client = new authority.Client({
-      client_id: 'qr_login',
-      client_secret: 'a865e121-895b-49d2-9ea1-bbd61c838367',
-      redirect_uris: ['https://ycc-qr-login.naturalimage.ch/cb'],
+      client_id: OIDC_CLIENT_ID,
+      client_secret: OIDC_CLIENT_SECRET,
+      redirect_uris: [`${FRONTEND_URL}/cb`],
       response_types: ['code'],
     });
     
     //start our server
-    server.listen(8080, '0.0.0.0', () => {
-        console.log(`Server started on port ${server.address().port} :)`);
+    server.listen(PORT, LISTEN_ADDRESS, () => {
+        console.log(`Server started at ${server.address().address}:${server.address().port})`);
     });
 })();
 

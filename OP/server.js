@@ -29,6 +29,7 @@ app.set('view engine', 'html');
 const {
   SERVER_PRIVATE_KEY_FILE,
   ISSUER,
+  FRONTEND_URL,
 } = process.env;
 
 let {

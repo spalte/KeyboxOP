@@ -8,5 +8,3 @@ services:
       KEYCLOAK_USER: admin
       KEYCLOAK_PASSWORD: user
       PROXY_ADDRESS_FORWARDING: true
-
-TjKtB1DvDpFPKK0BbukazlVYTCaw

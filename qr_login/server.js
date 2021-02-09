@@ -256,7 +256,7 @@ refreshCache.on( "del", function( modulus, refreshToken ){
     
     //start our server
     server.listen(PORT, LISTEN_ADDRESS, () => {
-        console.log(`Server started at ${server.address().address}:${server.address().port})`);
+        console.log(`Server started at ${server.address().address}:${server.address().port}`);
     });
 })();
 

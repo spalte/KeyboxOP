@@ -9,7 +9,7 @@ services:
     env_file:
       - secrets.env
     environment:
-      - FRONTEND_URL: https://ycc-qr-login.kheops.online
-      - OIDC_AUTHORITY: https://ycc-login.naturalimage.ch/auth/realms/ycc
-      - OIDC_CLIENT_ID: qr_login
-      - KEYBOX_OP_NAME: keybox_op
+      - FRONTEND_URL:https://ycc-qr-login.kheops.online
+      - OIDC_AUTHORITY:https://ycc-login.naturalimage.ch/auth/realms/ycc
+      - OIDC_CLIENT_ID:qr_login
+      - KEYBOX_OP_NAME:keybox_op

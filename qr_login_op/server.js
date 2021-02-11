@@ -39,7 +39,7 @@ if (!SERVER_PRIVATE_KEY) {
   SERVER_PRIVATE_KEY = new NodeRSA().generateKeyPair().exportKey('pkcs1-private-pem');
 }
 const SERVER_JWK = pem2jwk(SERVER_PRIVATE_KEY);
-const SERVER_JWK_KEY_ID = '0';
+const SERVER_JWK_KEY_ID = crypto.randomBytes(16).toString('hex');
 
 const app = express();
 app.use(express.urlencoded());

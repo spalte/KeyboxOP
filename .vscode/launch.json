@@ -34,12 +34,28 @@
                 "KEYBOX_OP_NAME": "keybox_op",
                 "PORT": "8078",
             },
-            "envFile": "${workspaceFolder}/qr_login/secrets.env",
+            "envFile": "${workspaceFolder}/secrets.env",
             "name": "Launch QR Login",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}/qr_login/server.js"
+        },
+        {
+            "type": "pwa-node",
+            "request": "launch",
+            "env": {
+                "FRONTEND_URL": "http://127.0.0.1:8092",
+                "OIDC_AUTHORITY": "https://ycc-login.naturalimage.ch/auth/realms/ycc",
+                "OIDC_CLIENT_ID": "qr_login",
+                "PORT": "8092",
+            },
+            "envFile": "${workspaceFolder}/secrets.env",
+            "name": "Launch QR Login OP",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/qr_login_op/server.js"
         }
     ]
 }

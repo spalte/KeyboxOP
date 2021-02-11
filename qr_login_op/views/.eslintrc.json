@@ -1,9 +1,11 @@
 {
     "env": {
-      "browser": true,
-      "es6": true
+      "browser": true
     },
-    "plugins": ["compat"],
+    "plugins": [
+      "compat",
+      "html"
+    ],
     "rules": {
       "compat/compat": "error"
     },

@@ -1,0 +1,8 @@
+version: "3.2"
+services:
+  oidc-redirect:
+    build: .
+    user: "node"
+    container_name: qr_login_op
+    ports:
+      - "127.0.0.1:8092:8080"

@@ -10,8 +10,11 @@
         "Keybox",
         "encrypter",
         "etag",
+        "hsts",
         "keycloak",
         "nocache",
-        "oidcredirect"
+        "oidcredirect",
+        "signin",
+        "signout"
     ]
 }

@@ -1,0 +1,8 @@
+version: "3.2"
+services:
+  oidc-redirect:
+    build: .
+    user: "node"
+    container_name: port_website
+    ports:
+      - "127.0.0.1:8091:8080"

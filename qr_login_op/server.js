@@ -7,6 +7,7 @@ const NodeCache = require('node-cache');
 const cookieParser = require('cookie-parser');
 const cookieEncrypter = require('cookie-encrypter');
 const mustacheExpress = require('mustache-express');
+const cors = require('cors');
 const { Issuer, generators } = require('openid-client');
 
 const {
@@ -34,9 +35,19 @@ app.use(express.urlencoded());
 app.set('views', path.join(__dirname, 'views'));
 app.engine('html', mustacheExpress());
 app.set('view engine', 'html');
-app.use(helmet());
+app.use(
+  helmet({
+    permittedCrossDomainPolicies: false,
+    hsts: false,
+    contentSecurityPolicy: false,
+  }),
+);
 app.use(cookieParser(COOKIE_SECRET_KEY));
 app.use(cookieEncrypter(COOKIE_SECRET_KEY));
+app.use(cors({
+  allowedHeaders: 'Authorization',
+  methods: 'HEAD,GET,POST',
+}));
 
 let CLIENT;
 
@@ -51,6 +62,47 @@ function runAsyncWrapper(callback) {
   };
 }
 
+app.get('/.well-known/openid-configuration', (req, res) => {
+  const configuration = {
+    issuer: FRONTEND_URL,
+    authorization_endpoint: `${FRONTEND_URL}/auth`,
+    token_endpoint: `${FRONTEND_URL}/token`,
+    userinfo_endpoint: `${FRONTEND_URL}/userinfo`,
+    introspection_endpoint: `${FRONTEND_URL}/introspect`,
+    jwks_uri: `${FRONTEND_URL}/certs`,
+    check_session_iframe: `${FRONTEND_URL}/check_session_iframe.html`,
+    response_types_supported: [
+      'code',
+    ],
+    subject_types_supported: [
+      'public',
+    ],
+    id_token_signing_alg_values_supported: [
+      'RS256',
+    ],
+    scopes_supported: [
+      'openid',
+      'email',
+      'profile',
+      'boat_key',
+    ],
+    claims_supported: [
+      'aud',
+      'email',
+      'exp',
+      'iat',
+      'iss',
+      'name',
+      'sub',
+    ],
+    grant_types_supported: [
+      'authorization_code',
+    ],
+  };
+
+  res.json(configuration);
+});
+
 app.get('/auth', runAsyncWrapper(async (req, res) => {
   const nonce = crypto.randomBytes(16).toString('hex');
 
@@ -60,13 +112,13 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     code_challenge: req.query.code_challenge,
   });
 
-  const qrLoginUrl = `${FRONTEND_URL}/qr-auth&nonce=${nonce}`;
+  const qrLoginUrl = `${FRONTEND_URL}/qr-auth?nonce=${nonce}`;
 
   res.render('auth', {
     nonce,
     qr_login_url: qrLoginUrl,
     encoded_qr_login_url: encodeURIComponent(qrLoginUrl),
-    check_qr_authorization_url: `${FRONTEND_URL}/check_qr_authorization&nonce=${nonce}`,
+    check_qr_authorization_url: `${FRONTEND_URL}/check_qr_authorization?nonce=${nonce}`,
   });
 }));
 
@@ -124,19 +176,19 @@ app.get('/check_qr_authorization', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
-    res.send({ authenticated: false });
-  } else {
     res.send({
       authenticated: true,
-      callback_url: `${FRONTEND_URL}/check_qr_callback`,
+      callback_url: `${FRONTEND_URL}/check_qr_callback?nonce=${nonce}`,
     });
+  } else {
+    res.send({ authenticated: false });
   }
 }));
 
 app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
 
-  const requestInfo = AUTHENTICATION_REQUEST_CACHE.keys(nonce);
+  const requestInfo = AUTHENTICATION_REQUEST_CACHE.get(nonce);
   const redirectUri = `${requestInfo.redirect_uri}?state=${requestInfo.state}&code=${nonce}`;
 
   res.cookie('session', `qr_${nonce}`, {
@@ -157,7 +209,7 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
     response_types: ['code'],
   });
 
-  app.listen(PORT, LISTEN_ADDRESS, () => {
-    console.log(`Server started at ${app.address().address}:${app.address().port}`);
+  const server = app.listen(PORT, LISTEN_ADDRESS, () => {
+    console.log(`Server started at ${server.address().address}:${server.address().port}`);
   });
 }());

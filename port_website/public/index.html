@@ -85,10 +85,10 @@
         } else if (window.location.href.indexOf("?") >= 0) {
             signoutCallback();
         } else {
-            // userManager.clearStaleState();
-            // userManager.signinSilent(() => {
-            //     console.log('processed silent sign in')
-            // });
+            userManager.clearStaleState();
+            userManager.signinSilent(() => {
+                console.log('processed silent sign in')
+            });
         }
     </script>  
 </body>

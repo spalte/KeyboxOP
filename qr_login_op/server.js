@@ -3,11 +3,15 @@ const express = require('express');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const path = require('path');
+const jwt = require('jsonwebtoken');
+const bearerToken = require('express-bearer-token');
 const NodeCache = require('node-cache');
 const cookieParser = require('cookie-parser');
 const cookieEncrypter = require('cookie-encrypter');
 const mustacheExpress = require('mustache-express');
 const cors = require('cors');
+const NodeRSA = require('node-rsa');
+const { pem2jwk } = require('pem-jwk');
 const { Issuer, generators } = require('openid-client');
 
 const {
@@ -21,6 +25,7 @@ let {
   PORT,
   LISTEN_ADDRESS,
   COOKIE_SECRET_KEY,
+  SERVER_PRIVATE_KEY,
 } = process.env;
 
 PORT = PORT || 8080;
@@ -30,8 +35,15 @@ if (!COOKIE_SECRET_KEY) {
   COOKIE_SECRET_KEY = crypto.randomBytes(16).toString('hex');
 }
 
+if (!SERVER_PRIVATE_KEY) {
+  SERVER_PRIVATE_KEY = new NodeRSA().generateKeyPair().exportKey('pkcs1-private-pem');
+}
+const SERVER_JWK = pem2jwk(SERVER_PRIVATE_KEY);
+const SERVER_JWK_KEY_ID = '0';
+
 const app = express();
 app.use(express.urlencoded());
+app.use(bearerToken());
 app.set('views', path.join(__dirname, 'views'));
 app.engine('html', mustacheExpress());
 app.set('view engine', 'html');
@@ -40,6 +52,7 @@ app.use(
     permittedCrossDomainPolicies: false,
     hsts: false,
     contentSecurityPolicy: false,
+    frameguard: false,
   }),
 );
 app.use(cookieParser(COOKIE_SECRET_KEY));
@@ -70,7 +83,7 @@ app.get('/.well-known/openid-configuration', (req, res) => {
     userinfo_endpoint: `${FRONTEND_URL}/userinfo`,
     introspection_endpoint: `${FRONTEND_URL}/introspect`,
     jwks_uri: `${FRONTEND_URL}/certs`,
-    check_session_iframe: `${FRONTEND_URL}/check_session_iframe.html`,
+    // check_session_iframe: `${FRONTEND_URL}/check_session_iframe.html`,
     response_types_supported: [
       'code',
     ],
@@ -104,7 +117,26 @@ app.get('/.well-known/openid-configuration', (req, res) => {
 });
 
 app.get('/auth', runAsyncWrapper(async (req, res) => {
-  const nonce = crypto.randomBytes(16).toString('hex');
+  let { nonce } = req.signedCookies;
+  if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
+    AUTHENTICATION_REQUEST_CACHE.set(nonce, {
+      redirect_uri: req.query.redirect_uri,
+      state: req.query.state,
+      code_challenge: req.query.code_challenge,
+    });
+    const redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&code=${nonce}`;
+    res.redirect(redirectUri);
+    return;
+  }
+  if (req.query.prompt === 'none') {
+    res.json({
+      error: 'access_denied',
+      state: req.query.state,
+    });
+    return;
+  }
+
+  nonce = crypto.randomBytes(16).toString('hex');
 
   AUTHENTICATION_REQUEST_CACHE.set(nonce, {
     redirect_uri: req.query.redirect_uri,
@@ -163,9 +195,33 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
 
   const userinfo = await CLIENT.userinfo(tokenSet.access_token);
 
-  AUTHENTICATED_NONCE_CACHE.set(nonce, tokenSet.refresh_token);
+  AUTHENTICATED_NONCE_CACHE.set(nonce, tokenSet);
 
   res.send(`User: ${userinfo.name}`);
+}));
+
+app.post('/token', runAsyncWrapper(async (req, res) => {
+  const tokenSet = AUTHENTICATED_NONCE_CACHE.get(req.body.code);
+
+  const idClaims = {
+    iss: FRONTEND_URL,
+    aud: req.body.client_id,
+    sub: jwt.decode(tokenSet.id_token).sub,
+  };
+
+  const returnedTokenSet = {
+    access_token: tokenSet.access_token,
+    token_type: tokenSet.token_type,
+    expires_in: tokenSet.expires_in,
+    id_token: jwt.sign(idClaims, SERVER_PRIVATE_KEY, { algorithm: 'RS256', expiresIn: '1h', keyid: SERVER_JWK_KEY_ID }),
+  };
+
+  res.json(returnedTokenSet);
+}));
+
+app.get('/userinfo', runAsyncWrapper(async (req, res) => {
+  const userinfo = await CLIENT.userinfo(req.token);
+  res.json(userinfo);
 }));
 
 // const hmac = crypto.createHmac('SHA2', COOKIE_SECRET_KEY);
@@ -197,6 +253,19 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
   });
   res.redirect(redirectUri);
 }));
+
+app.get('/certs', (req, res) => {
+  const keys = [{
+    n: SERVER_JWK.n,
+    e: SERVER_JWK.e,
+    kid: SERVER_JWK_KEY_ID,
+    kty: SERVER_JWK.kty,
+    alg: 'RS256',
+    use: 'sig',
+  }];
+
+  res.json(keys);
+});
 
 (async function configureOIDC() {
   const authority = await Issuer.discover(OIDC_AUTHORITY);

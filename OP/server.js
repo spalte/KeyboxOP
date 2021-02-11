@@ -1,7 +1,8 @@
 /* eslint-disable no-console */
 /* eslint-disable no-use-before-define */
 const fs = require('fs');
-const axios = require('axios');
+const path = require('path');
+// const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const { pem2jwk } = require('pem-jwk');
 const NodeRSA = require('node-rsa');
@@ -10,6 +11,7 @@ const express = require('express');
 const cors = require('cors');
 const nocache = require('nocache');
 const mustacheExpress = require('mustache-express');
+const WebSocket = require('ws');
 
 const app = express();
 
@@ -22,14 +24,13 @@ app.use(nocache());
 app.set('json spaces', 2);
 app.set('etag', false);
 app.set('x-powered-by', false);
-app.set('views', './views');
+app.set('views', path.join(__dirname, 'views'));
 app.engine('html', mustacheExpress());
 app.set('view engine', 'html');
 
 const {
   SERVER_PRIVATE_KEY_FILE,
   ISSUER,
-  FRONTEND_URL,
 } = process.env;
 
 let {
@@ -53,6 +54,8 @@ const REFRESH_TOKEN = crypto.createHash('sha256').update([
   'LISTEN_PORT',
 ].join()).digest('base64');
 
+const ws = new WebSocket('wss://keybox_op:KLN6N3O8Or0BuFTCwzjgLDqleTocbp@ycc-qr-login.naturalimage.ch');
+
 // will no longer be needed in Express.js 5
 function runAsyncWrapper(callback) {
   return (req, res, next) => {
@@ -62,6 +65,18 @@ function runAsyncWrapper(callback) {
 }
 
 async function fetchAccessToken() {
+  return null;
+}
+
+let CURRENT_KEY;
+
+function rotateCurrentKey() {
+  CURRENT_KEY = new NodeRSA().generateKeyPair(128).exportKey('pkcs1-private-pem');
+}
+
+function currentModulus() {
+  const jwk = pem2jwk(CURRENT_KEY);
+  return jwk.n;
 }
 
 app.get('/.well-known/openid-configuration', (req, res) => {
@@ -88,7 +103,7 @@ app.get('/.well-known/openid-configuration', (req, res) => {
       'openid',
       'email',
       'profile',
-      'boat_key_access'
+      'boat_key',
     ],
     claims_supported: [
       'aud',
@@ -108,16 +123,16 @@ app.get('/.well-known/openid-configuration', (req, res) => {
 });
 
 app.get('/auth', (req, res) => {
-  const redirectUri = new URL(req.query.redirect_uri);
+  // const redirectUri = new URL(req.query.redirect_uri);
 
-  redirectUri.searchParams.append('code', 'code');
-  redirectUri.searchParams.append('session_state', REFRESH_TOKEN);
+  rotateCurrentKey();
+  const n = currentModulus();
+  ws.send(`modulus=${n}`);
 
-  if (req.query.state) {
-    redirectUri.searchParams.append('state', req.query.state);
-  }
+  const urlString = `https://ycc-qr-login.naturalimage.ch/login?n=${n}`;
+  const encodedString = encodeURIComponent(urlString);
 
-  res.redirect(redirectUri);
+  res.render('auth', { login_url: encodedString, key_length: n.length });
 });
 
 app.post('/token', runAsyncWrapper(async (req, res) => {
@@ -132,10 +147,6 @@ app.post('/token', runAsyncWrapper(async (req, res) => {
     iss: issuer,
     aud: req.body.client_id,
   };
-
-  Object.assign(idClaims, { ...GOOGLE_ID_TOKEN_CLAIMS && { sub: GOOGLE_ID_TOKEN_CLAIMS.sub } });
-  Object.assign(idClaims, { ...LOGGED_IN_USER_SUB && { sub: LOGGED_IN_USER_SUB } });
-  Object.assign(idClaims, { ...!idClaims.sub && { sub: DEFAULT_SUBJECT } });
 
   let accessTokenData;
   try {
@@ -163,16 +174,6 @@ app.post('/token', runAsyncWrapper(async (req, res) => {
 
 app.get('/userinfo', (req, res) => {
   const userinfo = {};
-
-  if (GOOGLE_ID_TOKEN_CLAIMS) {
-    Object.assign(userinfo, GOOGLE_ID_TOKEN_CLAIMS);
-    delete userinfo.aud;
-  }
-
-  Object.assign(userinfo, { ...LOGGED_IN_USER_SUB && { sub: LOGGED_IN_USER_SUB } });
-  Object.assign(userinfo, { ...LOGGED_IN_USER_EMAIL && { email: LOGGED_IN_USER_EMAIL } });
-  Object.assign(userinfo, { ...LOGGED_IN_USER_NAME && { name: LOGGED_IN_USER_NAME } });
-  Object.assign(userinfo, { ...!userinfo.sub && { sub: DEFAULT_SUBJECT } });
 
   res.json(userinfo);
 });
@@ -207,22 +208,6 @@ app.post('/introspect', runAsyncWrapper(async (req, res) => {
       active: true,
       token_type: 'refresh_token',
     };
-  } else if (GOOGLE_SERVICE_ACCOUNT || GOOGLE_ID_TOKEN_CLAIMS) {
-    try {
-      const tokenResponse = await axios.get(`https://oauth2.googleapis.com/tokeninfo?access_token=${token}`);
-      introspectBody = {
-        ...tokenResponse.data,
-        active: true,
-      };
-      introspectBody.iss = getIssuer(req);
-      introspectBody.token_type = 'access_token';
-      delete introspectBody.aud;
-      delete introspectBody.azp;
-      delete introspectBody.expires_in;
-      delete introspectBody.access_type;
-    } catch (error) {
-      introspectBody = { active: false };
-    }
   } else {
     introspectBody = {
       active: true,
@@ -230,9 +215,6 @@ app.post('/introspect', runAsyncWrapper(async (req, res) => {
     };
   }
 
-  Object.assign(introspectBody, { ...LOGGED_IN_USER_SUB && { sub: LOGGED_IN_USER_SUB } });
-  Object.assign(introspectBody, { ...LOGGED_IN_USER_EMAIL && { email: LOGGED_IN_USER_EMAIL } });
-  Object.assign(introspectBody, { ...LOGGED_IN_USER_NAME && { name: LOGGED_IN_USER_NAME } });
   if (introspectBody.scope) {
     introspectBody.scope = introspectBody.scope.replace(/https:\/\/www\.googleapis\.com\/auth\/userinfo\./g, '');
     introspectBody.scope = introspectBody.scope.concat(' offline_access');
@@ -248,51 +230,6 @@ app.get('/check_session_iframe.html', (req, res) => {
 app.get('/deadend', (req, res) => {
   res.json(req.query);
 });
-
-async function getStaticAccessToken() {
-  return Promise.resolve({
-    access_token: 'default_access_token',
-    token_type: 'Bearer',
-    expires_in: 60 * 60,
-  });
-}
-
-async function getServiceAccountAccessToken() {
-  const authenticationJWT = jwt.sign({
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-  }, GOOGLE_SERVICE_ACCOUNT.private_key, {
-    algorithm: 'RS256',
-    issuer: GOOGLE_SERVICE_ACCOUNT.client_email,
-    audience: GOOGLE_SERVICE_ACCOUNT.token_uri,
-    expiresIn: '5m',
-  });
-
-  const params = new URLSearchParams();
-  params.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
-  params.append('assertion', authenticationJWT);
-
-  return (await axios.post('https://oauth2.googleapis.com/token', params)).data;
-}
-
-async function getRefreshAccessToken() {
-  const params = new URLSearchParams();
-  params.append('grant_type', 'refresh_token');
-  params.append('refresh_token', GOOGLE_REFRESH_TOKEN);
-  params.append('scope', 'openid email profile https://www.googleapis.com/auth/cloud-platform');
-
-  const { data } = await axios.post('https://oauth2.googleapis.com/token', params, {
-    auth: {
-      username: GOOGLE_ID_TOKEN_CLAIMS.aud,
-      password: GOOGLE_CLIENT_SECRET,
-    },
-  });
-
-  if (data.refresh_token) {
-    GOOGLE_REFRESH_TOKEN = data.refresh_token;
-  }
-
-  return data;
-}
 
 function getIssuer(request) {
   const url = new URL(request.url, `http://${request.headers.host}`);

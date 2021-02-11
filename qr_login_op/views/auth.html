@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>YCC Port Computer Authentication</title>
+    </head>
+
+    <body>
+        <h1>Scan to login</h1>
+        <h2>URL = <a href="{{qr_login_url}}">{{qr_login_url}}</a></h2>
+        <img src="https://chart.googleapis.com/chart?cht=qr&chs=500x500&chl={{encoded_qr_login_url}}" alt="login url qr code" width="500" height="500">
+
+        <script>
+            function checkQrAuthorization() {
+              var req = new XMLHttpRequest();
+              req.open("GET", "{{check_qr_authorization_url}}", true);
+              req.onreadystatechange = function () {
+                if (r.readyState != 4 || r.status != 200) {
+                  return;
+                }
+                var response = JSON.parse(responseText);
+                if (response.authenticated) {
+                    window.location.replace(response.callback_url);
+                }
+              };
+            }
+
+            (function timerCallback() {
+                checkQrAuthorization();
+                setTimeout(function(){
+                    timerCallback();
+                }, 1000);
+            }());
+        </script>
+    </body>
+</html>

@@ -1,0 +1,44 @@
+{
+    "name": "qr_login_op",
+    "version": "1.0.0",
+    "description": "",
+    "main": "server.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "eslint": "^7.19.0",
+        "eslint-config-airbnb-base": "^14.2.1",
+        "eslint-plugin-html": "^6.1.1",
+        "eslint-plugin-import": "^2.22.1"
+    },
+    "dependencies": {
+        "cookie-encrypter": "^1.0.1",
+        "cookie-parser": "^1.4.5",
+        "express": "^4.17.1",
+        "helmet": "^4.4.1",
+        "mustache-express": "^1.3.0",
+        "node-cache": "^5.1.2",
+        "openid-client": "^4.4.0"
+    },
+    "eslintConfig": {
+        "env": {
+            "commonjs": true,
+            "es2021": true,
+            "browser": true,
+            "node": true
+        },
+        "plugins": [
+            "eslint-plugin-html"
+        ],
+        "extends": [
+            "airbnb-base"
+        ],
+        "parserOptions": {
+            "ecmaVersion": 12
+        },
+        "rules": {}
+    }
+}

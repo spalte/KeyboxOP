@@ -3,6 +3,14 @@ var path = require('path');
 var app = express();
 const nocache = require('nocache');
 
+let {
+  PORT,
+  LISTEN_ADDRESS,
+} = process.env;
+  
+PORT = PORT || 8080;
+LISTEN_ADDRESS = LISTEN_ADDRESS || '0.0.0.0';
+  
 var static = express.static(path.join(__dirname, 'public'));
 app.use(static);
 app.use(nocache());
@@ -15,7 +23,7 @@ app.get("/vanillajs.png", function(req, res){
     res.sendFile(path.join(__dirname, 'vanillajs.png'));
 });
 
-app.listen(8080, () => {
+app.listen(PORT, LISTEN_ADDRESS, () => {
     console.log('OIDC Redirect listening');
 });
   

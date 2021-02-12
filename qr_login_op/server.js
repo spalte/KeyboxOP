@@ -149,11 +149,8 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     res.redirect(`${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}&error_description=missing%20code_challenge`);
   }
 
-  const { session } = req.cookies;
-  let nonce;
-  if (session) {
-    nonce = session.substring(3);
-  }
+  let nonce = req.cookies.session;
+
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     let redirectUri;
     try {
@@ -161,7 +158,7 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
       const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(nonce);
       authenticationRecord.code_challenge = req.query.code_challenge;
       AUTHENTICATED_NONCE_CACHE.set(nonce, authenticationRecord);
-      redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&session_state=qr_${nonce}&code=${code}`;
+      redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&session_state=${nonce}&code=${code}`;
     } catch (error) {
       AUTHENTICATED_NONCE_CACHE.del(nonce);
       redirectUri = `${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}`;
@@ -188,6 +185,14 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     upstream_code_verifier: codeVerifier,
   });
 
+  const passwordLoginUri = CLIENT.authorizationUrl({
+    scope: 'openid email profile offline_access',
+    redirect_uri: `${FRONTEND_URL}/password-cb`,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    state: nonce,
+  });
+
   const qrLoginUrl = `${FRONTEND_URL}/qr-auth?nonce=${nonce}`;
 
   res.render('auth', {
@@ -195,6 +200,7 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     qr_login_url: qrLoginUrl,
     encoded_qr_login_url: encodeURIComponent(qrLoginUrl),
     check_qr_authorization_url: `${FRONTEND_URL}/check_qr_authorization?nonce=${nonce}`,
+    password_login_uri: passwordLoginUri,
   });
 }));
 
@@ -211,6 +217,7 @@ app.get('/qr-auth', runAsyncWrapper(async (req, res) => {
 
   const redirectUri = CLIENT.authorizationUrl({
     scope: 'openid email profile offline_access',
+    redirect_uri: `${FRONTEND_URL}/qr-cb`,
     code_challenge: AUTHENTICATION_REQUEST_CACHE.get(nonce).upstream_code_challenge,
     code_challenge_method: 'S256',
     state: nonce,
@@ -291,6 +298,7 @@ app.get('/userinfo', runAsyncWrapper(async (req, res) => {
 }));
 
 app.get('/check_qr_authorization', runAsyncWrapper(async (req, res) => {
+  console.log('check_qr');
   const { nonce } = req.query;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
@@ -310,14 +318,65 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
 
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
-    res.cookie('session', `qr_${nonce}`);
-    res.redirect(`${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=qr_${nonce}&code=${code}`);
+    res.cookie('session', `${nonce}`);
+    res.redirect(`${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=${nonce}&code=${code}`);
   } catch (error) {
     AUTHENTICATED_NONCE_CACHE.del(nonce);
     console.log('unable to refresh token in qr callback');
     res.redirect(`${requestInfo.redirect_uri}?error=invalid_request&state=${requestInfo.state}`);
   }
 }));
+
+app.get('/password-cb', runAsyncWrapper(async (req, res) => {
+  const params = CLIENT.callbackParams(req);
+  const nonce = params.state;
+
+  if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
+    res.send('Session already started');
+    return;
+  }
+  if (!AUTHENTICATION_REQUEST_CACHE.has(nonce)) {
+    res.send('No authorization session for this code is currently active');
+    return;
+  }
+
+  const requestInfo = AUTHENTICATION_REQUEST_CACHE.take(nonce);
+
+  const tokenSet = await CLIENT.callback(`${FRONTEND_URL}/password-cb`, params, {
+    code_verifier: requestInfo.upstream_code_verifier,
+    state: nonce,
+    response_type: 'code',
+  });
+  console.log('received and validated tokens %j', tokenSet);
+  console.log('validated ID Token claims %j', tokenSet.claims());
+
+  AUTHENTICATED_NONCE_CACHE.set(nonce, {
+    refresh_token: tokenSet.refresh_token,
+    code_challenge: requestInfo.code_challenge,
+    id_token: tokenSet.id_token,
+  });
+
+  try {
+    const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
+    res.cookie('session', `${nonce}`);
+
+    const endSessionUrl = CLIENT.endSessionUrl({
+      id_token_hint: tokenSet.id_token,
+      post_logout_redirect_uri: `${FRONTEND_URL}/post_logout_redirect`,
+      state: `${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=${nonce}&code=${code}`,
+    });
+
+    res.redirect(endSessionUrl);
+  } catch (error) {
+    AUTHENTICATED_NONCE_CACHE.del(nonce);
+    console.log('unable to refresh token in password callback');
+    res.redirect(`${requestInfo.redirect_uri}?error=invalid_request&state=${requestInfo.state}`);
+  }
+}));
+
+app.get('/post_logout_redirect', (req, res) => {
+  res.redirect(decodeURIComponent(req.query.state));
+});
 
 app.get('/certs', (req, res) => {
   const keys = [{
@@ -337,8 +396,7 @@ app.get('/check_session_iframe.html', (req, res) => {
 });
 
 app.get('/end_session', runAsyncWrapper(async (req, res) => {
-  const { session } = req.cookies;
-  const nonce = session.substring(3);
+  const nonce = req.cookies.session;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     try {
@@ -362,7 +420,8 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
   CLIENT = new authority.Client({
     client_id: OIDC_CLIENT_ID,
     client_secret: OIDC_CLIENT_SECRET,
-    redirect_uris: [`${FRONTEND_URL}/qr-cb`],
+    redirect_uris: [`${FRONTEND_URL}/qr-cb`, `${FRONTEND_URL}/password-cb`],
+    post_logout_redirect_uris: [`${FRONTEND_URL}/post_logout_redirect`],
     response_types: ['code'],
   });
 

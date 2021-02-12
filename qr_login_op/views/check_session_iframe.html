@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>check session iframe</title>
+    </head>
+
+    <body>
+        <script>
+          function getCookie(cname) {
+            const name = `${cname}=`;
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i += 1) {
+              let c = ca[i];
+              while (c.charAt(0) === ' ') {
+                c = c.substring(1);
+              }
+              if (c.indexOf(name) === 0) {
+                return c.substring(name.length, c.length);
+              }
+            }
+            return '';
+          }
+
+          function receiveMessage(e) { // e.data has client_id and session_state
+            const sessionState = e.data.split(' ')[1];
+
+            // if message is syntactically invalid
+            //     postMessage('error', e.origin) and return
+
+            // if message comes an unexpected origin
+            //     postMessage('error', e.origin) and return
+
+            // get_op_user_agent_state() is an OP defined function
+            // that returns the User Agent's login status at the OP.
+            // How it is done is entirely up to the OP.
+            const opuas = getCookie('session');
+
+            // Here, the session_state is calculated in this particular way,
+            // but it is entirely up to the OP how to do it under the
+            // requirements defined in this specification.
+            // var ss = CryptoJS.SHA256(client_id + ' ' + e.origin + ' ' +
+            //     opuas + ' ' + salt) + "." + salt;
+
+            const ss = opuas;
+            let stat = '';
+            if (sessionState === ss) {
+              stat = 'unchanged';
+            } else {
+              stat = 'changed';
+            }
+
+            e.source.postMessage(stat, e.origin);
+          }
+          window.addEventListener('message', receiveMessage, false);
+        </script>
+    </body>
+</html>

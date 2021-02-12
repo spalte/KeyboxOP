@@ -65,7 +65,7 @@ app.use(cors({
 let CLIENT;
 
 const AUTHENTICATION_REQUEST_CACHE = new NodeCache({ stdTTL: 60 * 5 });
-const AUTHENTICATED_NONCE_CACHE = new NodeCache({ stdTTL: 60 });
+const AUTHENTICATED_NONCE_CACHE = new NodeCache({ stdTTL: 60 * 30 });
 
 // will no longer be needed in Express.js 5
 function runAsyncWrapper(callback) {
@@ -83,7 +83,8 @@ app.get('/.well-known/openid-configuration', (req, res) => {
     userinfo_endpoint: `${FRONTEND_URL}/userinfo`,
     introspection_endpoint: `${FRONTEND_URL}/introspect`,
     jwks_uri: `${FRONTEND_URL}/certs`,
-    // check_session_iframe: `${FRONTEND_URL}/check_session_iframe.html`,
+    check_session_iframe: `${FRONTEND_URL}/check_session_iframe.html`,
+    end_session_endpoint: `${FRONTEND_URL}/end_session`,
     response_types_supported: [
       'code',
     ],
@@ -117,22 +118,18 @@ app.get('/.well-known/openid-configuration', (req, res) => {
 });
 
 app.get('/auth', runAsyncWrapper(async (req, res) => {
-  let { nonce } = req.signedCookies;
+  const { session } = req.cookies;
+  let nonce;
+  if (session) {
+    nonce = session.substring(3);
+  }
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
-    AUTHENTICATION_REQUEST_CACHE.set(nonce, {
-      redirect_uri: req.query.redirect_uri,
-      state: req.query.state,
-      code_challenge: req.query.code_challenge,
-    });
-    const redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&code=${nonce}`;
+    const redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&session_state=qr_${nonce}&code=${nonce}`;
     res.redirect(redirectUri);
     return;
   }
   if (req.query.prompt === 'none') {
-    res.json({
-      error: 'access_denied',
-      state: req.query.state,
-    });
+    res.redirect(`${req.query.redirect_uri}?error=login_required&state=${req.query.state}`);
     return;
   }
 
@@ -185,6 +182,11 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
   const nonce = params.state;
   const codeVerifier = req.signedCookies.code_verifier;
 
+  if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
+    res.send('Session already started');
+    return;
+  }
+
   const tokenSet = await CLIENT.callback(`${FRONTEND_URL}/qr-cb`, params, {
     code_verifier: codeVerifier,
     state: nonce,
@@ -202,6 +204,7 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
 
 app.post('/token', runAsyncWrapper(async (req, res) => {
   const tokenSet = AUTHENTICATED_NONCE_CACHE.get(req.body.code);
+  AUTHENTICATED_NONCE_CACHE.ttl(req.body.code);
 
   const idClaims = {
     iss: FRONTEND_URL,
@@ -245,11 +248,11 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
 
   const requestInfo = AUTHENTICATION_REQUEST_CACHE.get(nonce);
-  const redirectUri = `${requestInfo.redirect_uri}?state=${requestInfo.state}&code=${nonce}`;
+  const redirectUri = `${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=qr_${nonce}&code=${nonce}`;
 
   res.cookie('session', `qr_${nonce}`, {
-    signed: true,
-    maxAge: 1000 * 60 * 5,
+    signed: false,
+    plain: true,
   });
   res.redirect(redirectUri);
 }));
@@ -265,6 +268,21 @@ app.get('/certs', (req, res) => {
   }];
 
   res.json(keys);
+});
+
+app.get('/check_session_iframe.html', (req, res) => {
+  res.render('check_session_iframe');
+});
+
+app.get('/end_session', (req, res) => {
+  const { session } = req.cookies;
+  const nonce = session.substring(3);
+
+  AUTHENTICATION_REQUEST_CACHE.del(nonce);
+  AUTHENTICATED_NONCE_CACHE.del(nonce);
+
+  res.clearCookie('session');
+  res.redirect(req.query.post_logout_redirect_uri);
 });
 
 (async function configureOIDC() {

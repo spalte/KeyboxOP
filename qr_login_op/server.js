@@ -7,7 +7,6 @@ const jwt = require('jsonwebtoken');
 const bearerToken = require('express-bearer-token');
 const NodeCache = require('node-cache');
 const cookieParser = require('cookie-parser');
-const cookieEncrypter = require('cookie-encrypter');
 const mustacheExpress = require('mustache-express');
 const cors = require('cors');
 const NodeRSA = require('node-rsa');
@@ -24,16 +23,16 @@ const {
 let {
   PORT,
   LISTEN_ADDRESS,
-  COOKIE_SECRET_KEY,
+  // COOKIE_SECRET_KEY,
   SERVER_PRIVATE_KEY,
 } = process.env;
 
 PORT = PORT || 8080;
 LISTEN_ADDRESS = LISTEN_ADDRESS || '0.0.0.0';
 
-if (!COOKIE_SECRET_KEY) {
-  COOKIE_SECRET_KEY = crypto.randomBytes(16).toString('hex');
-}
+// if (!COOKIE_SECRET_KEY) {
+//   COOKIE_SECRET_KEY = crypto.randomBytes(16).toString('hex');
+// }
 
 if (!SERVER_PRIVATE_KEY) {
   SERVER_PRIVATE_KEY = new NodeRSA().generateKeyPair().exportKey('pkcs1-private-pem');
@@ -55,8 +54,8 @@ app.use(
     frameguard: false,
   }),
 );
-app.use(cookieParser(COOKIE_SECRET_KEY));
-app.use(cookieEncrypter(COOKIE_SECRET_KEY));
+app.use(cookieParser());
+// app.use(cookieEncrypter(COOKIE_SECRET_KEY));
 app.use(cors({
   allowedHeaders: 'Authorization',
   methods: 'HEAD,GET,POST',
@@ -64,7 +63,7 @@ app.use(cors({
 
 let CLIENT;
 
-const AUTHENTICATION_REQUEST_CACHE = new NodeCache({ stdTTL: 60 * 5 });
+const AUTHENTICATION_REQUEST_CACHE = new NodeCache({ stdTTL: 60 * 60 * 24 * 30 });
 const AUTHENTICATED_NONCE_CACHE = new NodeCache({ stdTTL: 60 * 30 });
 
 // will no longer be needed in Express.js 5
@@ -72,6 +71,29 @@ function runAsyncWrapper(callback) {
   return (req, res, next) => {
     callback(req, res, next)
       .catch(next);
+  };
+}
+
+async function refreshTokens(nonce) {
+  if (!AUTHENTICATED_NONCE_CACHE.has(nonce)) {
+    throw new Error('No such session');
+  }
+
+  const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(nonce);
+  const tokenSet = await CLIENT.refresh(authenticationRecord.refresh_token);
+
+  if (tokenSet.refresh_token) {
+    authenticationRecord.refresh_token = tokenSet.refresh_token;
+    AUTHENTICATED_NONCE_CACHE.set(nonce, authenticationRecord);
+  } else {
+    AUTHENTICATED_NONCE_CACHE.ttl(nonce);
+  }
+
+  return {
+    access_token: tokenSet.access_token,
+    token_type: tokenSet.token_type,
+    expires_in: tokenSet.expires_in,
+    nonce,
   };
 }
 
@@ -118,13 +140,33 @@ app.get('/.well-known/openid-configuration', (req, res) => {
 });
 
 app.get('/auth', runAsyncWrapper(async (req, res) => {
+  if (req.query.code_challenge_method !== 'S256') {
+    res.redirect(`${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}&error_description=code_challenge_method%20S256%20required`);
+    return;
+  }
+
+  if (!req.query.code_challenge) {
+    res.redirect(`${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}&error_description=missing%20code_challenge`);
+  }
+
   const { session } = req.cookies;
   let nonce;
   if (session) {
     nonce = session.substring(3);
   }
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
-    const redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&session_state=qr_${nonce}&code=${nonce}`;
+    let redirectUri;
+    try {
+      const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
+      const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(nonce);
+      authenticationRecord.code_challenge = req.query.code_challenge;
+      AUTHENTICATED_NONCE_CACHE.set(nonce, authenticationRecord);
+      redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&session_state=qr_${nonce}&code=${code}`;
+    } catch (error) {
+      AUTHENTICATED_NONCE_CACHE.del(nonce);
+      redirectUri = `${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}`;
+      console.log('unable to refresh token');
+    }
     res.redirect(redirectUri);
     return;
   }
@@ -162,14 +204,13 @@ app.get('/qr-auth', runAsyncWrapper(async (req, res) => {
   const codeChallenge = generators.codeChallenge(codeVerifier);
 
   const redirectUri = CLIENT.authorizationUrl({
-    scope: 'openid email profile',
+    scope: 'openid email profile offline_access',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
     state: nonce,
   });
 
   res.cookie('code_verifier', codeVerifier, {
-    signed: true,
     maxAge: 1000 * 60 * 5,
     httpOnly: true,
   });
@@ -180,10 +221,14 @@ app.get('/qr-auth', runAsyncWrapper(async (req, res) => {
 app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
   const params = CLIENT.callbackParams(req);
   const nonce = params.state;
-  const codeVerifier = req.signedCookies.code_verifier;
+  const codeVerifier = req.cookies.code_verifier;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     res.send('Session already started');
+    return;
+  }
+  if (!AUTHENTICATION_REQUEST_CACHE.has(nonce)) {
+    res.send('No authorization session for this code is currently active');
     return;
   }
 
@@ -195,27 +240,45 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
   console.log('received and validated tokens %j', tokenSet);
   console.log('validated ID Token claims %j', tokenSet.claims());
 
+  AUTHENTICATED_NONCE_CACHE.set(nonce, {
+    refresh_token: tokenSet.refresh_token,
+    code_challenge: AUTHENTICATION_REQUEST_CACHE.get(nonce).code_challenge,
+    id_token: tokenSet.id_token,
+  });
+
   const userinfo = await CLIENT.userinfo(tokenSet.access_token);
-
-  AUTHENTICATED_NONCE_CACHE.set(nonce, tokenSet);
-
   res.send(`User: ${userinfo.name}`);
 }));
 
 app.post('/token', runAsyncWrapper(async (req, res) => {
-  const tokenSet = AUTHENTICATED_NONCE_CACHE.get(req.body.code);
-  AUTHENTICATED_NONCE_CACHE.ttl(req.body.code);
+  const decodedCode = JSON.parse(decodeURIComponent(req.body.code));
+  const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(decodedCode.nonce);
+
+  if (authenticationRecord.code_challenge) {
+    if (!req.body.code_verifier) {
+      res.status(400).json({ error: 'invalid_grant', error_description: 'missing code_verifier' });
+      return;
+    }
+    let hash = crypto.createHash('sha256').update(req.body.code_verifier.toString('ascii')).digest('base64');
+    hash = hash.split('=')[0].replace(/\+/g, '-').replace(/\//g, '_');
+
+    if (hash !== authenticationRecord.code_challenge) {
+      console.log(`bad challenge ${hash} !== ${authenticationRecord.code_challenge}`);
+      res.status(400).json({ error: 'invalid_grant', error_description: 'Unable to verify code_challenge' });
+      return;
+    }
+  }
 
   const idClaims = {
     iss: FRONTEND_URL,
     aud: req.body.client_id,
-    sub: jwt.decode(tokenSet.id_token).sub,
+    sub: jwt.decode(authenticationRecord.id_token).sub,
   };
 
   const returnedTokenSet = {
-    access_token: tokenSet.access_token,
-    token_type: tokenSet.token_type,
-    expires_in: tokenSet.expires_in,
+    access_token: decodedCode.access_token,
+    token_type: decodedCode.token_type,
+    expires_in: decodedCode.expires_in,
     id_token: jwt.sign(idClaims, SERVER_PRIVATE_KEY, { algorithm: 'RS256', expiresIn: '1h', keyid: SERVER_JWK_KEY_ID }),
   };
 
@@ -226,10 +289,6 @@ app.get('/userinfo', runAsyncWrapper(async (req, res) => {
   const userinfo = await CLIENT.userinfo(req.token);
   res.json(userinfo);
 }));
-
-// const hmac = crypto.createHmac('SHA2', COOKIE_SECRET_KEY);
-// hmac.update(NONCE_CACHE.take(nonce));
-// const session = hmac.digest('base64');
 
 app.get('/check_qr_authorization', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
@@ -247,14 +306,17 @@ app.get('/check_qr_authorization', runAsyncWrapper(async (req, res) => {
 app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
 
-  const requestInfo = AUTHENTICATION_REQUEST_CACHE.get(nonce);
-  const redirectUri = `${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=qr_${nonce}&code=${nonce}`;
+  const requestInfo = AUTHENTICATION_REQUEST_CACHE.take(nonce);
 
-  res.cookie('session', `qr_${nonce}`, {
-    signed: false,
-    plain: true,
-  });
-  res.redirect(redirectUri);
+  try {
+    const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
+    res.cookie('session', `qr_${nonce}`);
+    res.redirect(`${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=qr_${nonce}&code=${code}`);
+  } catch (error) {
+    AUTHENTICATED_NONCE_CACHE.del(nonce);
+    console.log('unable to refresh token in qr callback');
+    res.redirect(`${requestInfo.redirect_uri}?error=invalid_request&state=${requestInfo.state}`);
+  }
 }));
 
 app.get('/certs', (req, res) => {

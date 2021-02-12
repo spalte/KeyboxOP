@@ -336,16 +336,24 @@ app.get('/check_session_iframe.html', (req, res) => {
   res.render('check_session_iframe');
 });
 
-app.get('/end_session', (req, res) => {
+app.get('/end_session', runAsyncWrapper(async (req, res) => {
   const { session } = req.cookies;
   const nonce = session.substring(3);
+
+  if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
+    try {
+      await CLIENT.revoke(AUTHENTICATED_NONCE_CACHE.get(nonce).refresh_token);
+    } catch (error) {
+      console.log(error);
+    }
+  }
 
   AUTHENTICATION_REQUEST_CACHE.del(nonce);
   AUTHENTICATED_NONCE_CACHE.del(nonce);
 
   res.clearCookie('session');
   res.redirect(req.query.post_logout_redirect_uri);
-});
+}));
 
 (async function configureOIDC() {
   const authority = await Issuer.discover(OIDC_AUTHORITY);

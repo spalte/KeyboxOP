@@ -177,10 +177,15 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
 
   nonce = crypto.randomBytes(16).toString('hex');
 
+  const codeVerifier = generators.codeVerifier();
+  const codeChallenge = generators.codeChallenge(codeVerifier);
+
   AUTHENTICATION_REQUEST_CACHE.set(nonce, {
     redirect_uri: req.query.redirect_uri,
     state: req.query.state,
     code_challenge: req.query.code_challenge,
+    upstream_code_challenge: codeChallenge,
+    upstream_code_verifier: codeVerifier,
   });
 
   const qrLoginUrl = `${FRONTEND_URL}/qr-auth?nonce=${nonce}`;
@@ -200,19 +205,15 @@ app.get('/qr-auth', runAsyncWrapper(async (req, res) => {
     return;
   }
 
-  const codeVerifier = generators.codeVerifier();
-  const codeChallenge = generators.codeChallenge(codeVerifier);
+  if (!AUTHENTICATION_REQUEST_CACHE.has(nonce)) {
+    res.send('no active login session');
+  }
 
   const redirectUri = CLIENT.authorizationUrl({
     scope: 'openid email profile offline_access',
-    code_challenge: codeChallenge,
+    code_challenge: AUTHENTICATION_REQUEST_CACHE.get(nonce).upstream_code_challenge,
     code_challenge_method: 'S256',
     state: nonce,
-  });
-
-  res.cookie('code_verifier', codeVerifier, {
-    maxAge: 1000 * 60 * 5,
-    httpOnly: true,
   });
 
   res.redirect(redirectUri);
@@ -221,7 +222,6 @@ app.get('/qr-auth', runAsyncWrapper(async (req, res) => {
 app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
   const params = CLIENT.callbackParams(req);
   const nonce = params.state;
-  const codeVerifier = req.cookies.code_verifier;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     res.send('Session already started');
@@ -233,7 +233,7 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
   }
 
   const tokenSet = await CLIENT.callback(`${FRONTEND_URL}/qr-cb`, params, {
-    code_verifier: codeVerifier,
+    code_verifier: AUTHENTICATION_REQUEST_CACHE.get(nonce).upstream_code_verifier,
     state: nonce,
     response_type: 'code',
   });

@@ -152,20 +152,18 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
   let nonce = req.cookies.session;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
-    let redirectUri;
     try {
       const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
       const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(nonce);
       authenticationRecord.code_challenge = req.query.code_challenge;
       AUTHENTICATED_NONCE_CACHE.set(nonce, authenticationRecord);
-      redirectUri = `${req.query.redirect_uri}?state=${req.query.state}&session_state=${nonce}&code=${code}`;
+      res.redirect(`${req.query.redirect_uri}?state=${req.query.state}&session_state=${nonce}&code=${code}`);
+      return;
     } catch (error) {
       AUTHENTICATED_NONCE_CACHE.del(nonce);
-      redirectUri = `${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}`;
       console.log('unable to refresh token');
+      console.log(error);
     }
-    res.redirect(redirectUri);
-    return;
   }
   if (req.query.prompt === 'none') {
     res.redirect(`${req.query.redirect_uri}?error=login_required&state=${req.query.state}`);
@@ -298,10 +296,9 @@ app.get('/userinfo', runAsyncWrapper(async (req, res) => {
 }));
 
 app.get('/check_qr_authorization', runAsyncWrapper(async (req, res) => {
-  console.log('check_qr');
   const { nonce } = req.query;
 
-  if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
+  if (AUTHENTICATED_NONCE_CACHE.has(nonce) && AUTHENTICATION_REQUEST_CACHE.has(nonce)) {
     res.send({
       authenticated: true,
       callback_url: `${FRONTEND_URL}/check_qr_callback?nonce=${nonce}`,
@@ -356,27 +353,33 @@ app.get('/password-cb', runAsyncWrapper(async (req, res) => {
     id_token: tokenSet.id_token,
   });
 
+  const endSessionUrl = CLIENT.endSessionUrl({
+    id_token_hint: tokenSet.id_token,
+    post_logout_redirect_uri: `${FRONTEND_URL}/post_logout_redirect`,
+    state: Buffer.from(JSON.stringify({
+      nonce,
+      state: requestInfo.state,
+      redirectUri: requestInfo.redirect_uri,
+    })).toString('base64'),
+  });
+
+  res.redirect(endSessionUrl);
+}));
+
+app.get('/post_logout_redirect', runAsyncWrapper(async (req, res) => {
+  const { state, nonce, redirectUri } = JSON.parse(Buffer.from(req.query.state, 'base64').toString());
+
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
     res.cookie('session', `${nonce}`);
-
-    const endSessionUrl = CLIENT.endSessionUrl({
-      id_token_hint: tokenSet.id_token,
-      post_logout_redirect_uri: `${FRONTEND_URL}/post_logout_redirect`,
-      state: `${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=${nonce}&code=${code}`,
-    });
-
-    res.redirect(endSessionUrl);
+    res.redirect(`${redirectUri}?state=${state}&session_state=${nonce}&code=${code}`);
   } catch (error) {
     AUTHENTICATED_NONCE_CACHE.del(nonce);
     console.log('unable to refresh token in password callback');
-    res.redirect(`${requestInfo.redirect_uri}?error=invalid_request&state=${requestInfo.state}`);
+    console.log(error);
+    res.redirect(`${redirectUri}?error=access_denied&state=${state}`);
   }
 }));
-
-app.get('/post_logout_redirect', (req, res) => {
-  res.redirect(decodeURIComponent(req.query.state));
-});
 
 app.get('/certs', (req, res) => {
   const keys = [{

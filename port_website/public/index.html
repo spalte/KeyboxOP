@@ -30,11 +30,11 @@
         Oidc.Log.level = Oidc.Log.WARN;
 
         let userManager = new Oidc.UserManager({
-            authority: 'http://127.0.0.1:8092',
+            authority: 'https://ycc-qr-login.naturalimage.ch',
             client_id: 'website',
-            redirect_uri: 'http://127.0.0.1:8091',
-            silent_redirect_uri:'http://127.0.0.1:8091/silent.html',
-            post_logout_redirect_uri: 'http://127.0.0.1:8091',
+            redirect_uri: 'https://ycc-port.naturalimage.ch',
+            silent_redirect_uri:'https://ycc-port.naturalimage.ch/silent.html',
+            post_logout_redirect_uri: 'https://ycc-port.naturalimage.ch',
             response_type: 'code',
             scope: 'openid profile',
         });

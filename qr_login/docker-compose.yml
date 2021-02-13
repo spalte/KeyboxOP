@@ -7,7 +7,7 @@ services:
     ports:
       - "127.0.0.1:8083:8080"
     env_file:
-      - secrets.env
+      - ../secrets.env
     environment:
       - FRONTEND_URL=https://ycc-qr-login.naturalimage.ch
       - OIDC_AUTHORITY=https://ycc-login.naturalimage.ch/auth/realms/ycc

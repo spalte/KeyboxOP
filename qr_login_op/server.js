@@ -18,6 +18,8 @@ const {
   OIDC_AUTHORITY,
   OIDC_CLIENT_ID,
   OIDC_CLIENT_SECRET,
+  OIDC_PHONE_CLIENT_ID,
+  OIDC_PHONE_CLIENT_SECRET,
 } = process.env;
 
 let {
@@ -62,6 +64,7 @@ app.use(cors({
 }));
 
 let CLIENT;
+let PHONE_CLIENT;
 
 const AUTHENTICATION_REQUEST_CACHE = new NodeCache({ stdTTL: 60 * 60 * 24 * 30 });
 const AUTHENTICATED_NONCE_CACHE = new NodeCache({ stdTTL: 60 * 30 });
@@ -161,6 +164,7 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
       return;
     } catch (error) {
       AUTHENTICATED_NONCE_CACHE.del(nonce);
+      AUTHENTICATION_REQUEST_CACHE.del(nonce);
       console.log('unable to refresh token');
       console.log(error);
     }
@@ -251,8 +255,7 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
     id_token: tokenSet.id_token,
   });
 
-  const userinfo = await CLIENT.userinfo(tokenSet.access_token);
-  res.send(`User: ${userinfo.name}`);
+  res.redirect(FRONTEND_URL);
 }));
 
 app.post('/token', runAsyncWrapper(async (req, res) => {
@@ -409,11 +412,78 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
     }
   }
 
-  AUTHENTICATION_REQUEST_CACHE.del(nonce);
-  AUTHENTICATED_NONCE_CACHE.del(nonce);
+  if (nonce) {
+    AUTHENTICATION_REQUEST_CACHE.del(nonce);
+    AUTHENTICATED_NONCE_CACHE.del(nonce);
+  }
 
   res.clearCookie('session');
   res.redirect(req.query.post_logout_redirect_uri);
+}));
+
+app.get('/', runAsyncWrapper(async (req, res) => {
+  const codeVerifier = generators.codeVerifier();
+  const codeChallenge = generators.codeChallenge(codeVerifier);
+
+  const redirectUri = PHONE_CLIENT.authorizationUrl({
+    scope: 'openid email profile',
+    redirect_uri: `${FRONTEND_URL}/login-status`,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+  });
+
+  res.cookie('status_code_verifier', codeVerifier, {
+    maxAge: 1000 * 60 * 15,
+    httpOnly: true,
+  });
+
+  res.redirect(redirectUri);
+}));
+
+app.get('/login-status', runAsyncWrapper(async (req, res) => {
+  const params = PHONE_CLIENT.callbackParams(req);
+
+  const tokenSet = await PHONE_CLIENT.callback(`${FRONTEND_URL}/login-status`, params, {
+    code_verifier: req.cookies.status_code_verifier,
+    response_type: 'code',
+  });
+
+  const userinfo = await PHONE_CLIENT.userinfo(tokenSet.access_token);
+
+  let idToken;
+  AUTHENTICATED_NONCE_CACHE.keys().forEach((key) => {
+    if (userinfo.sub === jwt.decode(AUTHENTICATED_NONCE_CACHE.get(key).id_token).sub) {
+      idToken = AUTHENTICATED_NONCE_CACHE.get(key).id_token;
+    }
+  });
+
+  const renderPage = idToken ? 'status_logged_in' : 'status_logged_out';
+  res.render(renderPage, {
+    name: userinfo.name,
+    logout_endpoint: `${FRONTEND_URL}/signout`,
+    id_token: idToken,
+    refresh_endpoint: FRONTEND_URL,
+    phone_logout_endpoint: PHONE_CLIENT.endSessionUrl({
+      id_token_hint: tokenSet.id_token,
+    }),
+  });
+}));
+
+app.post('/signout', runAsyncWrapper(async (req, res) => {
+  const { sub } = jwt.decode(req.body.id_token).sub;
+
+  let nonce;
+  AUTHENTICATED_NONCE_CACHE.keys().forEach((key) => {
+    if (sub === jwt.decode(AUTHENTICATED_NONCE_CACHE.get(key).id_token).sub) {
+      nonce = key;
+    }
+  });
+
+  if (nonce) {
+    AUTHENTICATED_NONCE_CACHE.del(nonce);
+    AUTHENTICATION_REQUEST_CACHE.del(nonce);
+  }
+  res.redirect(FRONTEND_URL);
 }));
 
 (async function configureOIDC() {
@@ -423,8 +493,21 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
   CLIENT = new authority.Client({
     client_id: OIDC_CLIENT_ID,
     client_secret: OIDC_CLIENT_SECRET,
-    redirect_uris: [`${FRONTEND_URL}/qr-cb`, `${FRONTEND_URL}/password-cb`],
+    redirect_uris: [
+      `${FRONTEND_URL}/qr-cb`,
+      `${FRONTEND_URL}/password-cb`,
+    ],
     post_logout_redirect_uris: [`${FRONTEND_URL}/post_logout_redirect`],
+    response_types: ['code'],
+  });
+
+  PHONE_CLIENT = new authority.Client({
+    client_id: OIDC_PHONE_CLIENT_ID,
+    client_secret: OIDC_PHONE_CLIENT_SECRET,
+    redirect_uris: [
+      `${FRONTEND_URL}/login-status`,
+    ],
+    post_logout_redirect_uris: [`${FRONTEND_URL}`],
     response_types: ['code'],
   });
 

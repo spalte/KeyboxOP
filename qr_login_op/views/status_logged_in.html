@@ -1,0 +1,27 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>YCC Port Computer Login Status</title>
+</head>
+
+<body>
+    <h1>YCC Port Computer Login Status</h1>
+    <h2>Signed In</h2>
+    <p>
+        User name: {{name}}
+    </p>
+    <form method="POST" action="{{{logout_endpoint}}}">
+        <input type="hidden" name="id_token" value="{{id_token}}" />
+        <button type="submit">Log out port computer</button>
+    </form>
+
+    <input type="button" onclick="location.href='{{{phone_logout_endpoint}}}';" value="Logout" />
+
+    <p>
+        <a href="{{{refresh_endpoint}}}">Refresh</a>
+    </p>
+</body>
+</html>

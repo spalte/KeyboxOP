@@ -41,6 +41,7 @@
                 "FRONTEND_URL": "http://127.0.0.1:8092",
                 "OIDC_AUTHORITY": "https://ycc-login.naturalimage.ch/auth/realms/ycc",
                 "OIDC_CLIENT_ID": "qr_login",
+                "OIDC_PHONE_CLIENT_ID": "qr_login_phone",
                 "PORT": "8092",
             },
             "envFile": "${workspaceFolder}/secrets.env",

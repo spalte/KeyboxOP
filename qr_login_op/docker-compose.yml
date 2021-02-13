@@ -3,6 +3,13 @@ services:
   oidc-redirect:
     build: .
     user: "node"
-    container_name: qr_login_op
+    container_name: qr_login
     ports:
-      - "127.0.0.1:8092:8080"
+      - "127.0.0.1:8083:8080"
+    env_file:
+      - secrets.env
+    environment:
+      - FRONTEND_URL=https://ycc-qr-login.naturalimage.ch
+      - OIDC_AUTHORITY=https://ycc-login.naturalimage.ch/auth/realms/ycc
+      - OIDC_CLIENT_ID=qr_login
+      - OIDC_PHONE_CLIENT_ID=qr_login_phone

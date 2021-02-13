@@ -302,12 +302,12 @@ app.get('/check_qr_authorization', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce) && AUTHENTICATION_REQUEST_CACHE.has(nonce)) {
-    res.send({
+    res.json({
       authenticated: true,
       callback_url: `${FRONTEND_URL}/check_qr_callback?nonce=${nonce}`,
     });
   } else {
-    res.send({ authenticated: false });
+    res.json({ authenticated: false });
   }
 }));
 
@@ -315,6 +315,11 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
   const { nonce } = req.query;
 
   const requestInfo = AUTHENTICATION_REQUEST_CACHE.take(nonce);
+  if (!requestInfo) {
+    console.log('No active log in session');
+    res.send('No active log in session');
+    return;
+  }
 
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
@@ -398,7 +403,9 @@ app.get('/certs', (req, res) => {
 });
 
 app.get('/check_session_iframe.html', (req, res) => {
-  res.render('check_session_iframe');
+  res.render('check_session_iframe', {
+    check_session_authorization_endpoint: `${FRONTEND_URL}/check_session`,
+  });
 });
 
 app.get('/end_session', runAsyncWrapper(async (req, res) => {
@@ -484,6 +491,11 @@ app.post('/signout', runAsyncWrapper(async (req, res) => {
     AUTHENTICATION_REQUEST_CACHE.del(nonce);
   }
   res.redirect(FRONTEND_URL);
+}));
+
+app.post('/check_session', runAsyncWrapper(async (req, res) => {
+  const nonce = req.body.session;
+  res.json({ active: AUTHENTICATED_NONCE_CACHE.has(nonce) });
 }));
 
 (async function configureOIDC() {

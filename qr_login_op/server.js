@@ -470,7 +470,7 @@ app.get('/login-status', runAsyncWrapper(async (req, res) => {
 }));
 
 app.post('/signout', runAsyncWrapper(async (req, res) => {
-  const { sub } = jwt.decode(req.body.id_token).sub;
+  const { sub } = jwt.decode(req.body.id_token);
 
   let nonce;
   AUTHENTICATED_NONCE_CACHE.keys().forEach((key) => {

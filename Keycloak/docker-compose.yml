@@ -9,4 +9,8 @@ services:
       KEYCLOAK_PASSWORD: user
       PROXY_ADDRESS_FORWARDING: "true"
       KEYCLOAK_FRONTEND_URL: https://ycc-keycloak.naturalimage.ch/auth/
+    volumes:
+      - keycloak-standalone-data:/opt/jboss/keycloak/standalone/data
+volumes:
+  keycloak-standalone-data:
       

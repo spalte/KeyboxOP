@@ -16,6 +16,10 @@
         <button id="signin">Sign in</button>
         <button id="signout">Sign out</button>
     </p>
+
+    <p>
+        <input type="button" id="manage" onclick="location.href='https://ycc-login.naturalimage.ch/auth/realms/ycc/account/';" value="Manage Account" />
+    </p>
     <a href="http://vanilla-js.com">
         <img src="vanillajs.png">
     </a>
@@ -41,6 +45,7 @@
         userManager.events.addUserSignedOut(function(){
             document.getElementById('signin').style.display = "inline";
             document.getElementById('signout').style.display = "none";
+            document.getElementById('manage').style.display = "none";
             document.getElementById('username').textContent = '';
             userManager.removeUser();
         });
@@ -55,6 +60,7 @@
                     document.getElementById('username').textContent = user.profile.name;
                     document.getElementById('signin').style.display = "none";
                     document.getElementById('signout').style.display = "inline";
+                    document.getElementById('manage').style.display = "inline";
                 }
                 window.history.replaceState("state", "YCC OIDC Website", "/"); 
             });
@@ -83,15 +89,18 @@
                         document.getElementById('username').textContent = user.profile.name;
                         document.getElementById('signin').style.display = "none";
                         document.getElementById('signout').style.display = "inline";
+                        document.getElementById('manage').style.display = "inline";
                     } else {
                         document.getElementById('signin').style.display = "inline";
                         document.getElementById('signout').style.display = "none";
+                        document.getElementById('manage').style.display = "none";
                         document.getElementById('username').textContent = '';
                     }
                 });
             }).catch((error) => {
                 document.getElementById('signin').style.display = "inline";
                 document.getElementById('signout').style.display = "none";
+                document.getElementById('manage').style.display = "none";
                 document.getElementById('username').textContent = '';
                 userManager.removeUser();
             });

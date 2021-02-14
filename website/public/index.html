@@ -38,15 +38,6 @@
             scope: 'openid profile',
         });
 
-        userManager.getUser().then((user) => {
-            if (user) {
-                document.getElementById('username').textContent = user.profile.name;
-                document.getElementById('signin').style.display = "none";
-            } else {
-                document.getElementById('signout').style.display = "none";
-            }
-        });
-
         userManager.events.addUserSignedOut(function(){
             document.getElementById('signin').style.display = "inline";
             document.getElementById('signout').style.display = "none";
@@ -85,8 +76,24 @@
             signoutCallback();
         } else {
             userManager.clearStaleState();
-            userManager.signinSilent(() => {
-                console.log('processed silent sign in')
+            userManager.signinSilent().then(() => {
+                console.log('processed silent sign in');
+                userManager.getUser().then((user) => {
+                    if (user) {
+                        document.getElementById('username').textContent = user.profile.name;
+                        document.getElementById('signin').style.display = "none";
+                        document.getElementById('signout').style.display = "inline";
+                    } else {
+                        document.getElementById('signin').style.display = "inline";
+                        document.getElementById('signout').style.display = "none";
+                        document.getElementById('username').textContent = '';
+                    }
+                });
+            }).catch((error) => {
+                document.getElementById('signin').style.display = "inline";
+                document.getElementById('signout').style.display = "none";
+                document.getElementById('username').textContent = '';
+                userManager.removeUser();
             });
         }
     </script>  

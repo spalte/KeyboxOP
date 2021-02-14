@@ -8,3 +8,5 @@ services:
       KEYCLOAK_USER: admin
       KEYCLOAK_PASSWORD: user
       PROXY_ADDRESS_FORWARDING: true
+      KEYCLOAK_FRONTEND_URL: https://ycc-keycloak.naturalimage.ch/auth/
+      

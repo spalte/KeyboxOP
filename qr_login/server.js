@@ -278,7 +278,7 @@ app.post('/token', runAsyncWrapper(async (req, res) => {
       res.status(400).json({ error: 'invalid_grant', error_description: 'missing code_verifier' });
       return;
     }
-    let hash = crypto.createHash('sha256').update(req.body.code_verifier.toString('ascii')).digest('hex');
+    let hash = crypto.createHash('sha256').update(req.body.code_verifier.toString('ascii')).digest('base64');
     hash = hash.split('=')[0].replace(/\+/g, '-').replace(/\//g, '_');
 
     if (hash !== authenticationRecord.code_challenge) {

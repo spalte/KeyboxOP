@@ -161,7 +161,11 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     if (verifier !== signature) {
       nonce = undefined;
-      res.clearCookie('__Host-session');
+      res.clearCookie('__Host-session', {
+        secure: true,
+        sameSite: 'None',
+        path: '/',
+      });
     }
   }
 
@@ -439,7 +443,11 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
     const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     if (verifier !== signature) {
       nonce = undefined;
-      res.clearCookie('__Host-session');
+      res.clearCookie('__Host-session', {
+        secure: true,
+        sameSite: 'None',
+        path: '/',
+      });
     }
   }
 
@@ -456,7 +464,11 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
     AUTHENTICATED_NONCE_CACHE.del(nonce);
   }
 
-  res.clearCookie('__Host-session');
+  res.clearCookie('__Host-session', {
+    secure: true,
+    sameSite: 'None',
+    path: '/',
+  });
   res.redirect(req.query.post_logout_redirect_uri);
 }));
 
@@ -499,6 +511,14 @@ app.get('/login-status', runAsyncWrapper(async (req, res) => {
     }
   });
 
+  res.cookie('__Host-status_code_verifier', {
+    maxAge: 1000 * 60 * 15,
+    httpOnly: true,
+    secure: true,
+    path: '/',
+    sameSite: 'Lax',
+  });
+
   const renderPage = idToken ? 'status_logged_in' : 'status_logged_out';
   res.render(renderPage, {
     name: userinfo.name,
@@ -538,7 +558,11 @@ app.post('/check_session', runAsyncWrapper(async (req, res) => {
     const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     if (verifier !== signature) {
       nonce = undefined;
-      res.clearCookie('__Host-session');
+      res.clearCookie('__Host-session', {
+        secure: true,
+        sameSite: 'None',
+        path: '/',
+      });
     }
   }
 

@@ -158,7 +158,7 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
   if (signedSession) {
     let signature;
     [nonce, signature] = signedSession.split('.');
-    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     if (verifier !== signature) {
       nonce = undefined;
       res.clearCookie('__Host-session');
@@ -278,7 +278,7 @@ app.post('/token', runAsyncWrapper(async (req, res) => {
       res.status(400).json({ error: 'invalid_grant', error_description: 'missing code_verifier' });
       return;
     }
-    let hash = crypto.createHash('sha256').update(req.body.code_verifier.toString('ascii')).digest('base64');
+    let hash = crypto.createHash('sha256').update(req.body.code_verifier.toString('ascii')).digest('hex');
     hash = hash.split('=')[0].replace(/\+/g, '-').replace(/\//g, '_');
 
     if (hash !== authenticationRecord.code_challenge) {
@@ -334,7 +334,7 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
 
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
-    const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     res.cookie('__Host-session', `${nonce}.${signature}`, {
       secure: true,
       sameSite: 'None',
@@ -380,22 +380,22 @@ app.get('/password-cb', runAsyncWrapper(async (req, res) => {
   const endSessionUrl = CLIENT.endSessionUrl({
     id_token_hint: tokenSet.id_token,
     post_logout_redirect_uri: `${FRONTEND_URL}/post_logout_redirect`,
-    state: Buffer.from(JSON.stringify({
+    state: encodeURIComponent(Buffer.from(JSON.stringify({
       nonce,
       state: requestInfo.state,
       redirectUri: requestInfo.redirect_uri,
-    })).toString('base64'),
+    })).toString('base64')),
   });
 
   res.redirect(endSessionUrl);
 }));
 
 app.get('/post_logout_redirect', runAsyncWrapper(async (req, res) => {
-  const { state, nonce, redirectUri } = JSON.parse(Buffer.from(req.query.state, 'base64').toString());
+  const { state, nonce, redirectUri } = JSON.parse(Buffer.from(decodeURIComponent(req.query.state), 'base64').toString());
 
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
-    const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     res.cookie('__Host-session', `${nonce}.${signature}`, {
       secure: true,
       sameSite: 'None',
@@ -436,7 +436,7 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
   if (signedSession) {
     let signature;
     [nonce, signature] = signedSession.split('.');
-    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     if (verifier !== signature) {
       nonce = undefined;
       res.clearCookie('__Host-session');
@@ -535,7 +535,7 @@ app.post('/check_session', runAsyncWrapper(async (req, res) => {
   if (signedSession) {
     let signature;
     [nonce, signature] = signedSession.split('.');
-    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     if (verifier !== signature) {
       nonce = undefined;
       res.clearCookie('__Host-session');

@@ -21,7 +21,7 @@
         <img src="vanillajs.png">
     </a>
 
-    <script src='oidc-client.js'></script>
+    <script src='oidc-client.min.js'></script>
     <script>
         document.getElementById('signin').addEventListener("click", signin, false);
         document.getElementById('signout').addEventListener("click", signout, false);
@@ -30,11 +30,11 @@
         Oidc.Log.level = Oidc.Log.WARN;
 
         let userManager = new Oidc.UserManager({
-            authority: 'https://ycc-qr-login.naturalimage.ch',
-            client_id: 'website',
-            redirect_uri: 'https://ycc-port.naturalimage.ch',
-            silent_redirect_uri:'https://ycc-port.naturalimage.ch/silent.html',
-            post_logout_redirect_uri: 'https://ycc-port.naturalimage.ch',
+            authority: '{{{oidc_authority}}}',
+            client_id: '{{oidc_client_id}}',
+            redirect_uri: '{{{frontend_url}}}',
+            silent_redirect_uri:`{{{frontend_url}}}/silent.html`,
+            post_logout_redirect_uri: '{{{frontend_url}}}',
             response_type: 'code',
             scope: 'openid profile',
         });

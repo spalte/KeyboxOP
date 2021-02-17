@@ -152,10 +152,12 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     res.redirect(`${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}&error_description=missing%20code_challenge`);
   }
 
-  let nonce = req.cookies['__Host-session'].split('.')[0];
-  const signature = req.cookies['__Host-session'].split('.')[1];
+  let nonce;
+  const signedSession = req.cookies['__Host-session'];
 
-  if (nonce) {
+  if (signedSession) {
+    let signature;
+    [nonce, signature] = signedSession.split('.');
     const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
     if (verifier !== signature) {
       nonce = undefined;
@@ -426,10 +428,12 @@ app.get('/check_session_iframe.html', (req, res) => {
 });
 
 app.get('/end_session', runAsyncWrapper(async (req, res) => {
-  let nonce = req.cookies['__Host-session'].split('.')[0];
-  const signature = req.cookies['__Host-session'].split('.')[0];
+  let nonce;
+  const signedSession = req.cookies['__Host-session'];
 
-  if (nonce) {
+  if (signedSession) {
+    let signature;
+    [nonce, signature] = signedSession.split('.');
     const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
     if (verifier !== signature) {
       nonce = undefined;
@@ -522,10 +526,12 @@ app.post('/signout', runAsyncWrapper(async (req, res) => {
 }));
 
 app.post('/check_session', runAsyncWrapper(async (req, res) => {
-  let nonce = req.body.session.split('.')[0];
-  const signature = req.body.session.split('.')[1];
+  let nonce;
+  const signedSession = req.cookies['__Host-session'];
 
-  if (nonce) {
+  if (signedSession) {
+    let signature;
+    [nonce, signature] = signedSession.split('.');
     const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
     if (verifier !== signature) {
       nonce = undefined;

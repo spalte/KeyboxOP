@@ -337,6 +337,7 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
     const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
     res.cookie('__Host-session', `${nonce}.${signature}`, {
       secure: true,
+      sameSite: 'None',
       path: '/',
     });
     res.redirect(`${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=${nonce}&code=${code}`);
@@ -397,6 +398,7 @@ app.get('/post_logout_redirect', runAsyncWrapper(async (req, res) => {
     const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
     res.cookie('__Host-session', `${nonce}.${signature}`, {
       secure: true,
+      sameSite: 'None',
       path: '/',
     });
     res.redirect(`${redirectUri}?state=${state}&session_state=${nonce}&code=${code}`);
@@ -474,6 +476,7 @@ app.get('/', runAsyncWrapper(async (req, res) => {
     httpOnly: true,
     secure: true,
     path: '/',
+    sameSite: 'Lax',
   });
 
   res.redirect(redirectUri);

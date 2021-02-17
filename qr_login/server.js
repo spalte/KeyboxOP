@@ -68,6 +68,7 @@ let PHONE_CLIENT;
 
 const AUTHENTICATION_REQUEST_CACHE = new NodeCache({ stdTTL: 60 * 60 * 24 * 30 });
 const AUTHENTICATED_NONCE_CACHE = new NodeCache({ stdTTL: 60 * 30 });
+const CODE_CACHE = new NodeCache({ stdTTL: 60 });
 
 // will no longer be needed in Express.js 5
 function runAsyncWrapper(callback) {
@@ -171,7 +172,8 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     try {
-      const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
+      const code = crypto.randomBytes(16).toString('hex');
+      CODE_CACHE.set(code, await refreshTokens(nonce));
       const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(nonce);
       authenticationRecord.code_challenge = req.query.code_challenge;
       AUTHENTICATED_NONCE_CACHE.set(nonce, authenticationRecord);
@@ -274,7 +276,12 @@ app.get('/qr-cb', runAsyncWrapper(async (req, res) => {
 }));
 
 app.post('/token', runAsyncWrapper(async (req, res) => {
-  const decodedCode = JSON.parse(decodeURIComponent(req.body.code));
+  if (!CODE_CACHE.has(req.body.code)) {
+    res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid code' });
+    return;
+  }
+
+  const decodedCode = CODE_CACHE.take(req.body.code);
   const authenticationRecord = AUTHENTICATED_NONCE_CACHE.get(decodedCode.nonce);
 
   if (authenticationRecord.code_challenge) {
@@ -337,7 +344,8 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
   }
 
   try {
-    const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
+    const code = crypto.randomBytes(16).toString('hex');
+    CODE_CACHE.set(code, await refreshTokens(nonce));
     const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     res.cookie('__Host-session', `${nonce}.${signature}`, {
       secure: true,

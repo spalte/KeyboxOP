@@ -25,16 +25,16 @@ const {
 let {
   PORT,
   LISTEN_ADDRESS,
-  // COOKIE_SECRET_KEY,
+  COOKIE_SECRET_KEY,
   SERVER_PRIVATE_KEY,
 } = process.env;
 
 PORT = PORT || 8080;
 LISTEN_ADDRESS = LISTEN_ADDRESS || '0.0.0.0';
 
-// if (!COOKIE_SECRET_KEY) {
-//   COOKIE_SECRET_KEY = crypto.randomBytes(16).toString('hex');
-// }
+if (!COOKIE_SECRET_KEY) {
+  COOKIE_SECRET_KEY = crypto.randomBytes(16).toString('hex');
+}
 
 if (!SERVER_PRIVATE_KEY) {
   SERVER_PRIVATE_KEY = new NodeRSA().generateKeyPair().exportKey('pkcs1-private-pem');
@@ -152,7 +152,16 @@ app.get('/auth', runAsyncWrapper(async (req, res) => {
     res.redirect(`${req.query.redirect_uri}?error=invalid_request&state=${req.query.state}&error_description=missing%20code_challenge`);
   }
 
-  let nonce = req.cookies.session;
+  let nonce = req.cookies['__Host-session'].split('.')[0];
+  const signature = req.cookies['__Host-session'].split('.')[1];
+
+  if (nonce) {
+    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    if (verifier !== signature) {
+      nonce = undefined;
+      res.clearCookie('__Host-session');
+    }
+  }
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     try {
@@ -323,7 +332,11 @@ app.get('/check_qr_callback', runAsyncWrapper(async (req, res) => {
 
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
-    res.cookie('session', `${nonce}`);
+    const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    res.cookie('__Host-session', `${nonce}.${signature}`, {
+      secure: true,
+      path: '/',
+    });
     res.redirect(`${requestInfo.redirect_uri}?state=${requestInfo.state}&session_state=${nonce}&code=${code}`);
   } catch (error) {
     AUTHENTICATED_NONCE_CACHE.del(nonce);
@@ -379,7 +392,11 @@ app.get('/post_logout_redirect', runAsyncWrapper(async (req, res) => {
 
   try {
     const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
-    res.cookie('session', `${nonce}`);
+    const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    res.cookie('__Host-session', `${nonce}.${signature}`, {
+      secure: true,
+      path: '/',
+    });
     res.redirect(`${redirectUri}?state=${state}&session_state=${nonce}&code=${code}`);
   } catch (error) {
     AUTHENTICATED_NONCE_CACHE.del(nonce);
@@ -409,7 +426,16 @@ app.get('/check_session_iframe.html', (req, res) => {
 });
 
 app.get('/end_session', runAsyncWrapper(async (req, res) => {
-  const nonce = req.cookies.session;
+  let nonce = req.cookies['__Host-session'].split('.')[0];
+  const signature = req.cookies['__Host-session'].split('.')[0];
+
+  if (nonce) {
+    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    if (verifier !== signature) {
+      nonce = undefined;
+      res.clearCookie('__Host-session');
+    }
+  }
 
   if (AUTHENTICATED_NONCE_CACHE.has(nonce)) {
     try {
@@ -424,7 +450,7 @@ app.get('/end_session', runAsyncWrapper(async (req, res) => {
     AUTHENTICATED_NONCE_CACHE.del(nonce);
   }
 
-  res.clearCookie('session');
+  res.clearCookie('__Host-session');
   res.redirect(req.query.post_logout_redirect_uri);
 }));
 
@@ -439,9 +465,11 @@ app.get('/', runAsyncWrapper(async (req, res) => {
     code_challenge_method: 'S256',
   });
 
-  res.cookie('status_code_verifier', codeVerifier, {
+  res.cookie('__Host-status_code_verifier', codeVerifier, {
     maxAge: 1000 * 60 * 15,
     httpOnly: true,
+    secure: true,
+    path: '/',
   });
 
   res.redirect(redirectUri);
@@ -451,7 +479,7 @@ app.get('/login-status', runAsyncWrapper(async (req, res) => {
   const params = PHONE_CLIENT.callbackParams(req);
 
   const tokenSet = await PHONE_CLIENT.callback(`${FRONTEND_URL}/login-status`, params, {
-    code_verifier: req.cookies.status_code_verifier,
+    code_verifier: req.cookies['__Host-status_code_verifier'],
     response_type: 'code',
   });
 
@@ -494,7 +522,17 @@ app.post('/signout', runAsyncWrapper(async (req, res) => {
 }));
 
 app.post('/check_session', runAsyncWrapper(async (req, res) => {
-  const nonce = req.body.session;
+  let nonce = req.body.session.split('.')[0];
+  const signature = req.body.session.split('.')[1];
+
+  if (nonce) {
+    const verifier = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('base64');
+    if (verifier !== signature) {
+      nonce = undefined;
+      res.clearCookie('__Host-session');
+    }
+  }
+
   res.json({ active: AUTHENTICATED_NONCE_CACHE.has(nonce) });
 }));
 

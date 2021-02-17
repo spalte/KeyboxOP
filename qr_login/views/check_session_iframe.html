@@ -27,7 +27,14 @@
           function receiveMessage(e) { // e.data has client_id and session_state
             const sessionState = e.data.split(' ')[1];
 
-            const ss = getCookie('session');
+            const signedSession = getCookie('__Host-session');
+            const ss = signedSession.split('.')[0];
+
+            if (!signedSession) {
+              e.source.postMessage('changed', e.origin);
+              return;
+            }
+
             if (sessionState === ss) {
               const req = new XMLHttpRequest();
               req.open('POST', '{{{check_session_authorization_endpoint}}}', true);
@@ -44,7 +51,7 @@
                   e.source.postMessage('changed', e.origin);
                 }
               };
-              req.send(`session=${ss}`);
+              req.send(`session=${signedSession}`);
             } else {
               e.source.postMessage('changed', e.origin);
             }

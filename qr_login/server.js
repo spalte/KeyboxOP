@@ -406,7 +406,8 @@ app.get('/post_logout_redirect', runAsyncWrapper(async (req, res) => {
   const { state, nonce, redirectUri } = JSON.parse(Buffer.from(decodeURIComponent(req.query.state), 'base64').toString());
 
   try {
-    const code = encodeURIComponent(`${JSON.stringify(await refreshTokens(nonce))}`);
+    const code = crypto.randomBytes(16).toString('hex');
+    CODE_CACHE.set(code, await refreshTokens(nonce));
     const signature = crypto.createHmac('sha256', COOKIE_SECRET_KEY).update(nonce).digest('hex');
     res.cookie('__Host-session', `${nonce}.${signature}`, {
       secure: true,
